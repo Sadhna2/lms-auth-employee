@@ -1,0 +1,66 @@
+# Existing-infrastructure alternative only. Use deployment/aws-stack.json to create the complete project stack.
+# Deployment preparation only: packages the tested backend, not an RDS database or a VPC.
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Member 1 - LMS login and employee management
+Parameters:
+  DatabaseUrl:
+    Type: String
+    Description: JDBC MySQL URL with TLS enabled, e.g. jdbc:mysql://endpoint:3306/lms_auth_employee?sslMode=VERIFY_IDENTITY
+  DatabaseUsername:
+    Type: String
+  DatabasePassword:
+    Type: String
+    NoEcho: true
+  BootstrapAdminUsername:
+    Type: String
+    Default: ''
+  BootstrapAdminPassword:
+    Type: String
+    Default: ''
+    NoEcho: true
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnets with connectivity to the MySQL database
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    Description: Lambda security groups allowed to connect to MySQL on port 3306
+Resources:
+  LmsRestApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: stage1
+  LmsAuthEmployeeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: leave-management-system-lambda-aws
+      Handler: com.nexturn.lms.StreamLambdaHandler::handleRequest
+      Runtime: java17
+      CodeUri: target/lms-auth-employee-0.0.1-SNAPSHOT-lambda-package.zip
+      MemorySize: 1024
+      Timeout: 30
+      ReservedConcurrentExecutions: 5
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AWSLambdaVPCAccessExecutionRole
+      VpcConfig:
+        SubnetIds: !Ref SubnetIds
+        SecurityGroupIds: !Ref SecurityGroupIds
+      Environment:
+        Variables:
+          DB_URL: !Ref DatabaseUrl
+          DB_USERNAME: !Ref DatabaseUsername
+          DB_PASSWORD: !Ref DatabasePassword
+          BOOTSTRAP_ADMIN_USERNAME: !Ref BootstrapAdminUsername
+          BOOTSTRAP_ADMIN_PASSWORD: !Ref BootstrapAdminPassword
+      Events:
+        ProxyResource:
+          Type: Api
+          Properties:
+            RestApiId: !Ref LmsRestApi
+            Path: /{proxy+}
+            Method: any
+Outputs:
+  LmsAuthEmployeeApi:
+    Description: API base URL; append /api/csrf or another documented path
+    Value: !Sub 'https://${LmsRestApi}.execute-api.${AWS::Region}.amazonaws.com/stage1'

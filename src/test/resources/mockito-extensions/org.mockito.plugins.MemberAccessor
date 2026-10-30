@@ -1,0 +1,2 @@
+# Use ordinary reflection; agent attachment is restricted on this Windows host.
+member-accessor-reflection

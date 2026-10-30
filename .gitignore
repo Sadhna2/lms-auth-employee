@@ -1,0 +1,14 @@
+# Exclude generated artifacts, local secrets and editor metadata from source control.
+/target/
+/.aws-sam/
+/.idea/
+/.settings/
+/.classpath
+/.project
+*.log
+
+samconfig.toml
+
+# Frontend dependencies and generated S3 assets.
+/frontend/node_modules/
+/frontend/dist/

@@ -1,0 +1,1367 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "LMS Member 1: Java 17 login/employee API, private MySQL RDS, durable SNS-to-SQS employee events, S3 frontend with HTTPS",
+  "Metadata": {
+    "DeploymentNotes": "Project-specific names. Deploy under the existing AWS Free plan using credits only; do not upgrade the account. Initialize schema before enabling event relay."
+  },
+  "Parameters": {
+    "ArtifactBucket": {
+      "Type": "String",
+      "Description": "Existing private S3 bucket in this region containing the Lambda zip"
+    },
+    "ArtifactKey": {
+      "Type": "String",
+      "Default": "backend/lms-auth-employee-lambda-java17.zip"
+    },
+    "DatabaseClass": {
+      "Type": "String",
+      "Default": "db.t3.micro",
+      "AllowedValues": [
+        "db.t3.micro",
+        "db.t4g.micro"
+      ]
+    },
+    "EnableEventRelay": {
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": [
+        "true",
+        "false"
+      ],
+      "Description": "Enable after successful database setup"
+    },
+    "NotificationEmail": {
+      "Type": "String",
+      "Default": "",
+      "NoEcho": true,
+      "Description": "Optional SNS email recipient; AWS sends a confirmation email before notifications can be delivered."
+    }
+  },
+  "Conditions": {
+    "RelayEnabled": {
+      "Fn::Equals": [
+        {
+          "Ref": "EnableEventRelay"
+        },
+        "true"
+      ]
+    },
+    "HasNotificationEmail": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "NotificationEmail"
+            },
+            ""
+          ]
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "Vpc": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.42.0.0/16",
+        "EnableDnsSupport": true,
+        "EnableDnsHostnames": true,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          },
+          {
+            "Key": "Name",
+            "Value": "leave-management-system-vpc-aws"
+          }
+        ]
+      }
+    },
+    "PrivateSubnetOne": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "CidrBlock": "10.42.1.0/24",
+        "AvailabilityZone": {
+          "Fn::Select": [
+            0,
+            {
+              "Fn::GetAZs": ""
+            }
+          ]
+        },
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          },
+          {
+            "Key": "Name",
+            "Value": "leave-management-system-private-subnet-a-aws"
+          }
+        ]
+      }
+    },
+    "PrivateSubnetTwo": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "CidrBlock": "10.42.2.0/24",
+        "AvailabilityZone": {
+          "Fn::Select": [
+            1,
+            {
+              "Fn::GetAZs": ""
+            }
+          ]
+        },
+        "MapPublicIpOnLaunch": false,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          },
+          {
+            "Key": "Name",
+            "Value": "leave-management-system-private-subnet-b-aws"
+          }
+        ]
+      }
+    },
+    "LambdaSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "GroupDescription": "LMS Lambda outbound to private database and SNS endpoint only",
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 3306,
+            "ToPort": 3306,
+            "CidrIp": "10.42.0.0/16"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "CidrIp": "10.42.0.0/16"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          },
+          {
+            "Key": "Name",
+            "Value": "leave-management-system-lambda-sg-aws"
+          }
+        ]
+      }
+    },
+    "DatabaseSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "GroupDescription": "MySQL only from LMS Lambda security group",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 3306,
+            "ToPort": 3306,
+            "SourceSecurityGroupId": {
+              "Ref": "LambdaSecurityGroup"
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          },
+          {
+            "Key": "Name",
+            "Value": "leave-management-system-rds-sg-aws"
+          }
+        ]
+      }
+    },
+    "EndpointSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "GroupDescription": "Private HTTPS to SNS from LMS functions",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "SourceSecurityGroupId": {
+              "Ref": "LambdaSecurityGroup"
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          },
+          {
+            "Key": "Name",
+            "Value": "leave-management-system-sns-endpoint-sg-aws"
+          }
+        ]
+      }
+    },
+    "SnsEndpoint": {
+      "Type": "AWS::EC2::VPCEndpoint",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "VpcEndpointType": "Interface",
+        "PrivateDnsEnabled": true,
+        "ServiceName": {
+          "Fn::Sub": "com.amazonaws.${AWS::Region}.sns"
+        },
+        "SubnetIds": [
+          {
+            "Ref": "PrivateSubnetOne"
+          }
+        ],
+        "SecurityGroupIds": [
+          {
+            "Ref": "EndpointSecurityGroup"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "leave-management-system-sns-endpoint-aws"
+          }
+        ]
+      }
+    },
+    "DatabaseSecret": {
+      "Type": "AWS::SecretsManager::Secret",
+      "Properties": {
+        "Description": "LMS database credentials; managed by the deployment, never stored in source",
+        "GenerateSecretString": {
+          "SecretStringTemplate": "{\"username\":\"lms_admin\"}",
+          "GenerateStringKey": "password",
+          "PasswordLength": 32,
+          "ExcludePunctuation": true
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ],
+        "Name": "leave-management-system/database"
+      }
+    },
+    "AdminSecret": {
+      "Type": "AWS::SecretsManager::Secret",
+      "Properties": {
+        "Description": "Initial application ADMIN credentials; retrieve privately for first login",
+        "GenerateSecretString": {
+          "SecretStringTemplate": "{\"username\":\"admin@example.com\"}",
+          "GenerateStringKey": "password",
+          "PasswordLength": 32,
+          "ExcludePunctuation": true
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ],
+        "Name": "leave-management-system/admin"
+      }
+    },
+    "DatabaseSubnetGroup": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "LMS private database subnets in two availability zones",
+        "SubnetIds": [
+          {
+            "Ref": "PrivateSubnetOne"
+          },
+          {
+            "Ref": "PrivateSubnetTwo"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ],
+        "DBSubnetGroupName": "leave-management-system-rds-subnets-aws"
+      }
+    },
+    "Database": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+        "DBInstanceIdentifier": "leave-management-system-rds-aws",
+        "Engine": "mysql",
+        "DBInstanceClass": {
+          "Ref": "DatabaseClass"
+        },
+        "AllocatedStorage": "20",
+        "StorageType": "gp3",
+        "StorageEncrypted": true,
+        "DBName": "lms_auth_employee",
+        "MasterUsername": "lms_admin",
+        "MasterUserPassword": {
+          "Fn::Sub": "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+        },
+        "DBSubnetGroupName": {
+          "Ref": "DatabaseSubnetGroup"
+        },
+        "VPCSecurityGroups": [
+          {
+            "Ref": "DatabaseSecurityGroup"
+          }
+        ],
+        "PubliclyAccessible": false,
+        "MultiAZ": false,
+        "BackupRetentionPeriod": 7,
+        "DeletionProtection": true,
+        "AutoMinorVersionUpgrade": true,
+        "CopyTagsToSnapshot": true,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ]
+      },
+      "DeletionPolicy": "Snapshot",
+      "UpdateReplacePolicy": "Snapshot"
+    },
+    "EmployeeEventsTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "TopicName": "leave-management-system-employee-events",
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ]
+      }
+    },
+    "EmployeeEventsDeadLetterQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": "leave-management-system-employee-events-dlq",
+        "SqsManagedSseEnabled": true,
+        "MessageRetentionPeriod": 1209600,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ]
+      }
+    },
+    "EmployeeEventsQueue": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": "leave-management-system-employee-events",
+        "SqsManagedSseEnabled": true,
+        "MessageRetentionPeriod": 345600,
+        "VisibilityTimeout": 60,
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "EmployeeEventsDeadLetterQueue",
+              "Arn"
+            ]
+          },
+          "maxReceiveCount": 5
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ]
+      }
+    },
+    "QueuePolicy": {
+      "Type": "AWS::SQS::QueuePolicy",
+      "Properties": {
+        "Queues": [
+          {
+            "Ref": "EmployeeEventsQueue"
+          }
+        ],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "sns.amazonaws.com"
+              },
+              "Action": "sqs:SendMessage",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "EmployeeEventsQueue",
+                  "Arn"
+                ]
+              },
+              "Condition": {
+                "ArnEquals": {
+                  "aws:SourceArn": {
+                    "Ref": "EmployeeEventsTopic"
+                  }
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "QueueSubscription": {
+      "Type": "AWS::SNS::Subscription",
+      "Properties": {
+        "TopicArn": {
+          "Ref": "EmployeeEventsTopic"
+        },
+        "Protocol": "sqs",
+        "Endpoint": {
+          "Fn::GetAtt": [
+            "EmployeeEventsQueue",
+            "Arn"
+          ]
+        },
+        "RawMessageDelivery": true
+      },
+      "DependsOn": "QueuePolicy"
+    },
+    "ApplicationRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+          },
+          {
+            "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ],
+        "RoleName": "leave-management-system-lambda-role-aws"
+      }
+    },
+    "RelayRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+          },
+          {
+            "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ],
+        "Policies": [
+          {
+            "PolicyName": "PublishOnlyEmployeeEvents",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "sns:Publish",
+                  "Resource": {
+                    "Ref": "EmployeeEventsTopic"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "RoleName": "leave-management-system-event-relay-role-aws"
+      }
+    },
+    "ApplicationLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/leave-management-system-lambda-aws",
+        "RetentionInDays": 14,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ]
+      }
+    },
+    "Application": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "leave-management-system-lambda-aws",
+        "Runtime": "java17",
+        "Handler": "com.nexturn.lms.StreamLambdaHandler::handleRequest",
+        "Architectures": [
+          "x86_64"
+        ],
+        "Role": {
+          "Fn::GetAtt": [
+            "ApplicationRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "ArtifactKey"
+          }
+        },
+        "MemorySize": 1024,
+        "Timeout": 30,
+        "VpcConfig": {
+          "SubnetIds": [
+            {
+              "Ref": "PrivateSubnetOne"
+            },
+            {
+              "Ref": "PrivateSubnetTwo"
+            }
+          ],
+          "SecurityGroupIds": [
+            {
+              "Ref": "LambdaSecurityGroup"
+            }
+          ]
+        },
+        "Environment": {
+          "Variables": {
+            "DB_URL": {
+              "Fn::Sub": "jdbc:mysql://${Database.Endpoint.Address}:3306/lms_auth_employee?sslMode=VERIFY_IDENTITY&connectionTimeZone=UTC&trustCertificateKeyStoreUrl=file:/var/task/rds-truststore.p12&trustCertificateKeyStoreType=PKCS12&trustCertificateKeyStorePassword=public-ca-only"
+            },
+            "DB_USERNAME": "lms_admin",
+            "DB_PASSWORD": {
+              "Fn::Sub": "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+            }
+          }
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ]
+      },
+      "DependsOn": [
+        "ApplicationLogGroup"
+      ]
+    },
+    "DatabaseSetupLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/leave-management-system-db-setup-aws",
+        "RetentionInDays": 14,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ]
+      }
+    },
+    "DatabaseSetup": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "leave-management-system-db-setup-aws",
+        "Runtime": "java17",
+        "Handler": "com.nexturn.lms.aws.DatabaseSetupHandler::handleRequest",
+        "Architectures": [
+          "x86_64"
+        ],
+        "Role": {
+          "Fn::GetAtt": [
+            "ApplicationRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "ArtifactKey"
+          }
+        },
+        "MemorySize": 512,
+        "Timeout": 30,
+        "VpcConfig": {
+          "SubnetIds": [
+            {
+              "Ref": "PrivateSubnetOne"
+            },
+            {
+              "Ref": "PrivateSubnetTwo"
+            }
+          ],
+          "SecurityGroupIds": [
+            {
+              "Ref": "LambdaSecurityGroup"
+            }
+          ]
+        },
+        "Environment": {
+          "Variables": {
+            "DB_URL": {
+              "Fn::Sub": "jdbc:mysql://${Database.Endpoint.Address}:3306/lms_auth_employee?sslMode=VERIFY_IDENTITY&connectionTimeZone=UTC&trustCertificateKeyStoreUrl=file:/var/task/rds-truststore.p12&trustCertificateKeyStoreType=PKCS12&trustCertificateKeyStorePassword=public-ca-only"
+            },
+            "DB_USERNAME": "lms_admin",
+            "DB_PASSWORD": {
+              "Fn::Sub": "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+            },
+            "BOOTSTRAP_ADMIN_USERNAME": "admin@example.com",
+            "BOOTSTRAP_ADMIN_PASSWORD": {
+              "Fn::Sub": "{{resolve:secretsmanager:${AdminSecret}:SecretString:password}}"
+            }
+          }
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ]
+      },
+      "DependsOn": [
+        "DatabaseSetupLogGroup"
+      ]
+    },
+    "EventRelayLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/leave-management-system-event-relay-aws",
+        "RetentionInDays": 14,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ]
+      }
+    },
+    "EventRelay": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "leave-management-system-event-relay-aws",
+        "Runtime": "java17",
+        "Handler": "com.nexturn.lms.aws.EmployeeEventRelayHandler::handleRequest",
+        "Architectures": [
+          "x86_64"
+        ],
+        "Role": {
+          "Fn::GetAtt": [
+            "RelayRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "ArtifactKey"
+          }
+        },
+        "MemorySize": 512,
+        "Timeout": 30,
+        "VpcConfig": {
+          "SubnetIds": [
+            {
+              "Ref": "PrivateSubnetOne"
+            },
+            {
+              "Ref": "PrivateSubnetTwo"
+            }
+          ],
+          "SecurityGroupIds": [
+            {
+              "Ref": "LambdaSecurityGroup"
+            }
+          ]
+        },
+        "Environment": {
+          "Variables": {
+            "DB_URL": {
+              "Fn::Sub": "jdbc:mysql://${Database.Endpoint.Address}:3306/lms_auth_employee?sslMode=VERIFY_IDENTITY&connectionTimeZone=UTC&trustCertificateKeyStoreUrl=file:/var/task/rds-truststore.p12&trustCertificateKeyStoreType=PKCS12&trustCertificateKeyStorePassword=public-ca-only"
+            },
+            "DB_USERNAME": "lms_admin",
+            "DB_PASSWORD": {
+              "Fn::Sub": "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+            },
+            "EMPLOYEE_EVENTS_TOPIC_ARN": {
+              "Ref": "EmployeeEventsTopic"
+            }
+          }
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ]
+      },
+      "DependsOn": [
+        "EventRelayLogGroup"
+      ]
+    },
+    "RelaySchedule": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Description": "Relay committed employee events from MySQL to SNS every minute",
+        "ScheduleExpression": "rate(1 minute)",
+        "State": {
+          "Fn::If": [
+            "RelayEnabled",
+            "ENABLED",
+            "DISABLED"
+          ]
+        },
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "EventRelay",
+                "Arn"
+              ]
+            },
+            "Id": "EmployeeEventRelay",
+            "RetryPolicy": {
+              "MaximumEventAgeInSeconds": 3600,
+              "MaximumRetryAttempts": 2
+            }
+          }
+        ],
+        "Name": "leave-management-system-employee-event-relay-aws"
+      }
+    },
+    "RelayInvokePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "EventRelay"
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "RelaySchedule",
+            "Arn"
+          ]
+        }
+      }
+    },
+    "RestApi": {
+      "Type": "AWS::ApiGateway::RestApi",
+      "Properties": {
+        "Name": "leave-management-system-api-aws",
+        "EndpointConfiguration": {
+          "Types": [
+            "REGIONAL"
+          ]
+        }
+      }
+    },
+    "ProxyResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "RestApi"
+        },
+        "ParentId": {
+          "Fn::GetAtt": [
+            "RestApi",
+            "RootResourceId"
+          ]
+        },
+        "PathPart": "{proxy+}"
+      }
+    },
+    "ProxyMethod": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "RestApi"
+        },
+        "ResourceId": {
+          "Ref": "ProxyResource"
+        },
+        "HttpMethod": "ANY",
+        "AuthorizationType": "NONE",
+        "Integration": {
+          "Type": "AWS_PROXY",
+          "IntegrationHttpMethod": "POST",
+          "Uri": {
+            "Fn::Sub": "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Application.Arn}/invocations"
+          }
+        }
+      }
+    },
+    "ApiInvokePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "Application"
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Sub": "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/*"
+        }
+      }
+    },
+    "RestApiDeployment": {
+      "Type": "AWS::ApiGateway::Deployment",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "RestApi"
+        }
+      },
+      "DependsOn": "ProxyMethod"
+    },
+    "ApiStage": {
+      "Type": "AWS::ApiGateway::Stage",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "RestApi"
+        },
+        "DeploymentId": {
+          "Ref": "RestApiDeployment"
+        },
+        "StageName": "stage1",
+        "MethodSettings": [
+          {
+            "ResourcePath": "/*",
+            "HttpMethod": "*",
+            "ThrottlingBurstLimit": 5,
+            "ThrottlingRateLimit": 2.0
+          }
+        ]
+      }
+    },
+    "FrontendBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": {
+          "Fn::Sub": "leave-management-system-frontend-${AWS::AccountId}-${AWS::Region}"
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ]
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "OriginAccessControl": {
+      "Type": "AWS::CloudFront::OriginAccessControl",
+      "Properties": {
+        "OriginAccessControlConfig": {
+          "Name": {
+            "Fn::Sub": "${AWS::StackName}-s3-origin"
+          },
+          "OriginAccessControlOriginType": "s3",
+          "SigningBehavior": "always",
+          "SigningProtocol": "sigv4"
+        }
+      }
+    },
+    "ApiNoCachePolicy": {
+      "Type": "AWS::CloudFront::CachePolicy",
+      "Properties": {
+        "CachePolicyConfig": {
+          "Name": {
+            "Fn::Sub": "${AWS::StackName}-api-no-cache"
+          },
+          "DefaultTTL": 0,
+          "MinTTL": 0,
+          "MaxTTL": 0,
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "EnableAcceptEncodingGzip": false,
+            "CookiesConfig": {
+              "CookieBehavior": "none"
+            },
+            "HeadersConfig": {
+              "HeaderBehavior": "none"
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "none"
+            }
+          }
+        }
+      }
+    },
+    "ApiOriginPolicy": {
+      "Type": "AWS::CloudFront::OriginRequestPolicy",
+      "Properties": {
+        "OriginRequestPolicyConfig": {
+          "Name": {
+            "Fn::Sub": "${AWS::StackName}-api-origin"
+          },
+          "CookiesConfig": {
+            "CookieBehavior": "all"
+          },
+          "HeadersConfig": {
+            "HeaderBehavior": "allExcept",
+            "Headers": [
+              "Host"
+            ]
+          },
+          "QueryStringsConfig": {
+            "QueryStringBehavior": "all"
+          }
+        }
+      }
+    },
+    "StaticCachePolicy": {
+      "Type": "AWS::CloudFront::CachePolicy",
+      "Properties": {
+        "CachePolicyConfig": {
+          "Name": {
+            "Fn::Sub": "${AWS::StackName}-static"
+          },
+          "DefaultTTL": 60,
+          "MinTTL": 0,
+          "MaxTTL": 86400,
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "EnableAcceptEncodingGzip": true,
+            "EnableAcceptEncodingBrotli": true,
+            "CookiesConfig": {
+              "CookieBehavior": "none"
+            },
+            "HeadersConfig": {
+              "HeaderBehavior": "none"
+            },
+            "QueryStringsConfig": {
+              "QueryStringBehavior": "none"
+            }
+          }
+        }
+      }
+    },
+    "ResponseHeadersPolicy": {
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Name": {
+            "Fn::Sub": "${AWS::StackName}-headers"
+          },
+          "SecurityHeadersConfig": {
+            "ContentTypeOptions": {
+              "Override": true
+            },
+            "FrameOptions": {
+              "FrameOption": "DENY",
+              "Override": true
+            },
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 31536000,
+              "Override": true
+            },
+            "ReferrerPolicy": {
+              "ReferrerPolicy": "strict-origin-when-cross-origin",
+              "Override": true
+            },
+            "ContentSecurityPolicy": {
+              "ContentSecurityPolicy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'",
+              "Override": true
+            }
+          }
+        }
+      }
+    },
+    "FrontendDistribution": {
+      "Type": "AWS::CloudFront::Distribution",
+      "Properties": {
+        "DistributionConfig": {
+          "Enabled": true,
+          "DefaultRootObject": "index.html",
+          "PriceClass": "PriceClass_100",
+          "HttpVersion": "http2",
+          "IPV6Enabled": true,
+          "Origins": [
+            {
+              "Id": "S3Frontend",
+              "DomainName": {
+                "Fn::GetAtt": [
+                  "FrontendBucket",
+                  "RegionalDomainName"
+                ]
+              },
+              "OriginAccessControlId": {
+                "Ref": "OriginAccessControl"
+              },
+              "S3OriginConfig": {
+                "OriginAccessIdentity": ""
+              }
+            },
+            {
+              "Id": "ApiOrigin",
+              "DomainName": {
+                "Fn::Sub": "${RestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}"
+              },
+              "OriginPath": "/stage1",
+              "CustomOriginConfig": {
+                "OriginProtocolPolicy": "https-only",
+                "OriginSSLProtocols": [
+                  "TLSv1.2"
+                ]
+              }
+            }
+          ],
+          "DefaultCacheBehavior": {
+            "TargetOriginId": "S3Frontend",
+            "ViewerProtocolPolicy": "redirect-to-https",
+            "AllowedMethods": [
+              "GET",
+              "HEAD"
+            ],
+            "CachedMethods": [
+              "GET",
+              "HEAD"
+            ],
+            "CachePolicyId": {
+              "Ref": "StaticCachePolicy"
+            },
+            "ResponseHeadersPolicyId": {
+              "Ref": "ResponseHeadersPolicy"
+            },
+            "Compress": true
+          },
+          "CacheBehaviors": [
+            {
+              "PathPattern": "/api/*",
+              "TargetOriginId": "ApiOrigin",
+              "ViewerProtocolPolicy": "https-only",
+              "AllowedMethods": [
+                "DELETE",
+                "GET",
+                "HEAD",
+                "OPTIONS",
+                "PATCH",
+                "POST",
+                "PUT"
+              ],
+              "CachedMethods": [
+                "GET",
+                "HEAD"
+              ],
+              "CachePolicyId": {
+                "Ref": "ApiNoCachePolicy"
+              },
+              "OriginRequestPolicyId": {
+                "Ref": "ApiOriginPolicy"
+              },
+              "ResponseHeadersPolicyId": {
+                "Ref": "ResponseHeadersPolicy"
+              },
+              "Compress": true
+            }
+          ],
+          "ViewerCertificate": {
+            "CloudFrontDefaultCertificate": true
+          },
+          "Comment": "leave-management-system-frontend-aws"
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "leave-management-system"
+          },
+          {
+            "Key": "Scope",
+            "Value": "auth-employee"
+          }
+        ]
+      }
+    },
+    "FrontendBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "FrontendBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "CloudFrontReadOnly",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "cloudfront.amazonaws.com"
+              },
+              "Action": "s3:GetObject",
+              "Resource": {
+                "Fn::Sub": "${FrontendBucket.Arn}/*"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "AWS:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "NotificationEmailSubscription": {
+      "Type": "AWS::SNS::Subscription",
+      "Condition": "HasNotificationEmail",
+      "Properties": {
+        "TopicArn": {
+          "Ref": "EmployeeEventsTopic"
+        },
+        "Protocol": "email",
+        "Endpoint": {
+          "Ref": "NotificationEmail"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "FrontendUrl": {
+      "Value": {
+        "Fn::Sub": "https://${FrontendDistribution.DomainName}"
+      }
+    },
+    "ApiBaseUrl": {
+      "Value": {
+        "Fn::Sub": "https://${RestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/stage1"
+      }
+    },
+    "FrontendBucketName": {
+      "Value": {
+        "Ref": "FrontendBucket"
+      }
+    },
+    "MainLambdaName": {
+      "Value": {
+        "Ref": "Application"
+      }
+    },
+    "SetupLambdaName": {
+      "Value": {
+        "Ref": "DatabaseSetup"
+      }
+    },
+    "RelayLambdaName": {
+      "Value": {
+        "Ref": "EventRelay"
+      }
+    },
+    "DatabaseEndpoint": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Database",
+          "Endpoint.Address"
+        ]
+      }
+    },
+    "DatabaseName": {
+      "Value": "lms_auth_employee"
+    },
+    "EmployeeEventsTopicArn": {
+      "Value": {
+        "Ref": "EmployeeEventsTopic"
+      }
+    },
+    "EmployeeEventsQueueUrl": {
+      "Value": {
+        "Ref": "EmployeeEventsQueue"
+      }
+    },
+    "ApplicationAdminSecretArn": {
+      "Value": {
+        "Ref": "AdminSecret"
+      }
+    },
+    "DatabaseSecretArn": {
+      "Value": {
+        "Ref": "DatabaseSecret"
+      }
+    },
+    "DistributionId": {
+      "Value": {
+        "Ref": "FrontendDistribution"
+      }
+    }
+  }
+}

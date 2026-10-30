@@ -1,0 +1,2 @@
+# Use interface/subclass mocks without attaching an agent on restricted Windows hosts.
+mock-maker-subclass

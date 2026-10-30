@@ -1,0 +1,114 @@
+/* LeaveHub – "Emerald Soft" theme (CSS3 on top of Bootstrap 5) */
+:root {
+  --lh-green: #059669;
+  --lh-green-dark: #047857;
+  --lh-green-soft: #ecfdf5;
+  --lh-green-line: #d1fae5;
+  --lh-ink: #064e3b;
+  --bs-primary: #059669;
+  --bs-primary-rgb: 5, 150, 105;
+  --bs-link-color: #059669;
+  --bs-link-color-rgb: 5, 150, 105;
+  --bs-link-hover-color: #047857;
+  --bs-body-bg: #ecfdf5;
+  --bs-body-color: #1f2937;
+  --bs-border-radius: .75rem;
+  --bs-border-radius-lg: 1.25rem;
+}
+body { background: var(--lh-green-soft); font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
+
+/* Buttons – pill shaped, emerald */
+.btn { border-radius: 50rem; font-weight: 600; }
+.btn-primary {
+  --bs-btn-bg: #059669; --bs-btn-border-color: #059669;
+  --bs-btn-hover-bg: #047857; --bs-btn-hover-border-color: #047857;
+  --bs-btn-active-bg: #065f46; --bs-btn-active-border-color: #065f46;
+  --bs-btn-disabled-bg: #059669; --bs-btn-disabled-border-color: #059669;
+}
+.btn-success {
+  --bs-btn-bg: #10b981; --bs-btn-border-color: #10b981;
+  --bs-btn-hover-bg: #059669; --bs-btn-hover-border-color: #059669;
+}
+
+/* Cards – big radius, soft green shadow */
+.card { border: 1px solid var(--lh-green-line); border-radius: 1.25rem; box-shadow: 0 8px 24px rgba(5, 150, 105, .12) !important; }
+.progress { background: var(--lh-green-line); border-radius: 50rem; }
+.progress-bar { background: var(--lh-green); }
+.stat-number { font-size: 2rem; font-weight: 700; color: var(--lh-ink); }
+
+/* Forms */
+.form-control, .form-select { border-radius: .75rem; border-color: #cfe9de; padding: .6rem .85rem; }
+.form-control:focus, .form-select:focus { border-color: var(--lh-green); box-shadow: 0 0 0 .25rem rgba(5, 150, 105, .18); }
+.form-check-input:checked { background-color: var(--lh-green); border-color: var(--lh-green); }
+
+/* Tables */
+.table-responsive { border-radius: 1.25rem; border: 1px solid var(--lh-green-line); background: #fff; box-shadow: 0 8px 24px rgba(5, 150, 105, .08); }
+.table { margin-bottom: 0; }
+.table-light { --bs-table-bg: var(--lh-green-soft); --bs-table-color: #065f46; }
+.table > :not(caption) > * > * { padding: .85rem 1rem; }
+
+/* Alerts & empty states */
+.alert { border-radius: .9rem; border: 0; }
+.empty-box { border: 2px dashed #a7f3d0; border-radius: 1.25rem; background: #fff; }
+
+/* Gradient welcome banner */
+.banner {
+  background: linear-gradient(120deg, #059669, #34d399);
+  color: #fff; border-radius: 1.25rem; padding: 1.4rem 1.6rem; margin-bottom: 1.25rem;
+  box-shadow: 0 8px 24px rgba(5, 150, 105, .25);
+}
+
+/* App shell: light sidebar */
+.brand-logo {
+  width: 36px; height: 36px; border-radius: 12px; background: var(--lh-green); color: #fff;
+  display: inline-grid; place-items: center; font-weight: 700;
+}
+.sidebar { background: #fff; border-right: 1px solid var(--lh-green-line); }
+@media (min-width: 992px) {
+  .sidebar { width: 260px; flex: none; position: sticky; top: 0; height: 100vh; }
+}
+.side-title { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #6b7f77; margin: 1.1rem .75rem .4rem; }
+.side-link {
+  display: block; padding: .6rem .9rem; margin-bottom: 2px; border-radius: 50rem;
+  color: #334155; text-decoration: none; font-size: .92rem;
+}
+.side-link:hover { background: var(--lh-green-soft); color: var(--lh-green-dark); }
+.side-link.active { background: var(--lh-green); color: #fff; box-shadow: 0 4px 12px rgba(5, 150, 105, .3); }
+.user-box { border-top: 1px solid var(--lh-green-line); padding-top: .9rem; }
+.topbar { background: #fff; border-bottom: 1px solid var(--lh-green-line); }
+.content-area { min-width: 0; }
+
+/* Split-screen auth */
+.auth-hero {
+  background: linear-gradient(150deg, #047857, #34d399); color: #fff;
+  display: flex; flex-direction: column; justify-content: center; padding: 3rem;
+}
+.auth-hero .brand-logo { background: #fff; color: var(--lh-green); }
+.auth-side { background: var(--lh-green-soft); }
+.auth-card { max-width: 400px; width: 100%; }
+
+/* Floating calendar */
+.cal-wrap { position: fixed; right: 24px; bottom: 24px; z-index: 1040; display: flex; align-items: center; gap: 10px; }
+.cal-label {
+  background: #064e3b; color: #fff; padding: .35rem .9rem; border-radius: 50rem; font-size: .85rem; font-weight: 600;
+  opacity: 0; transform: translateX(6px); transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap;
+}
+.cal-wrap:hover .cal-label, .cal-label.always { opacity: 1; transform: none; }
+.banner-info { display: inline-block; background: rgba(255, 255, 255, .2); border-radius: 50rem; padding: .45rem 1.1rem; font-size: .95rem; }
+.cal-fab {
+  width: 58px; height: 58px; padding: 0; border-radius: 50% !important;
+  display: grid; place-items: center; box-shadow: 0 8px 24px rgba(5, 150, 105, .4);
+}
+.cal-panel {
+  position: fixed; right: 24px; bottom: 96px; z-index: 1040;
+  width: min(340px, calc(100vw - 32px)); padding: 1rem;
+}
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: .85rem; }
+.cal-day.weekend { color: #9ca3af; }
+.cal-day.holiday { background: #fef3c7; color: #b45309; font-weight: 600; }
+.cal-day.leave { background: #dbeafe; color: #1d4ed8; font-weight: 600; }
+.cal-day.today { background: var(--lh-green); color: #fff; font-weight: 700; }
+.cal-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; background: #fef3c7; border: 1px solid #f59e0b; }
+.cal-dot.today { background: var(--lh-green); border-color: var(--lh-green); }
+.cal-dot.leave { background: #dbeafe; border-color: #3b82f6; }

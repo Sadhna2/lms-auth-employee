@@ -1,0 +1,376 @@
+{
+  "info": {
+    "name": "LMS - Login and Employee Management",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Prepared for stage1. baseUrl may be the CloudFront site origin or the direct API Gateway origin ending /stage1. Set username/password privately. Example contacts must be unique. No delete request runs automatically."
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      {
+        "key": "username",
+        "value": "{{username}}",
+        "type": "string"
+      },
+      {
+        "key": "password",
+        "value": "{{password}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 - Obtain CSRF cookie and token",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/csrf",
+        "description": "Use one consistent HTTPS baseUrl so Postman retains the CSRF cookie. Credentials are local variables only.",
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code === 200) pm.environment.set(\"csrfToken\", pm.response.json().token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Login (identity verification; no JWT)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/login",
+        "description": "Use one consistent HTTPS baseUrl so Postman retains the CSRF cookie. Credentials are local variables only.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Success message is returned\", () => pm.expect(pm.response.json().message).to.be.a(\"string\").and.not.empty);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Create manager profile",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/employees",
+        "description": "Use one consistent HTTPS baseUrl so Postman retains the CSRF cookie. Credentials are local variables only.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"empName\": \"Demo Manager\",\n  \"email\": \"{{managerEmail}}\",\n  \"phoneNumber\": \"9123456780\",\n  \"designation\": \"Team Lead\",\n  \"deptId\": 1,\n  \"managerId\": null,\n  \"gender\": \"Female\",\n  \"address\": \"Pune\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code === 201) pm.environment.set(\"managerId\", pm.response.json().empId);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Create manager login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/login/user",
+        "description": "Use one consistent HTTPS baseUrl so Postman retains the CSRF cookie. Credentials are local variables only.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{managerEmail}}\",\n  \"password\": \"{{managerPassword}}\",\n  \"role\": \"MANAGER\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+              "pm.test(\"Success message is returned\", () => pm.expect(pm.response.json().message).to.be.a(\"string\").and.not.empty);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 - Create employee profile",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/employees",
+        "description": "Use one consistent HTTPS baseUrl so Postman retains the CSRF cookie. Credentials are local variables only.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"empName\": \"Demo Employee\",\n  \"email\": \"{{employeeEmail}}\",\n  \"phoneNumber\": \"9876543210\",\n  \"designation\": \"Software Engineer\",\n  \"deptId\": 1,\n  \"managerId\": {{managerId}},\n  \"gender\": \"Female\",\n  \"address\": \"Pune\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code === 201) pm.environment.set(\"employeeId\", pm.response.json().empId);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Create employee login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/login/user",
+        "description": "Use one consistent HTTPS baseUrl so Postman retains the CSRF cookie. Credentials are local variables only.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{employeeEmail}}\",\n  \"password\": \"{{employeePassword}}\",\n  \"role\": \"EMPLOYEE\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+              "pm.test(\"Success message is returned\", () => pm.expect(pm.response.json().message).to.be.a(\"string\").and.not.empty);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 - List employees",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/employees",
+        "description": "Use one consistent HTTPS baseUrl so Postman retains the CSRF cookie. Credentials are local variables only."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 - View employee",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/employees/{{employeeId}}",
+        "description": "Use one consistent HTTPS baseUrl so Postman retains the CSRF cookie. Credentials are local variables only."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 - List managers",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/employees/managers",
+        "description": "Use one consistent HTTPS baseUrl so Postman retains the CSRF cookie. Credentials are local variables only."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 - View manager team",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/employees/{{managerId}}/team",
+        "description": "Use one consistent HTTPS baseUrl so Postman retains the CSRF cookie. Credentials are local variables only."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 - Update employee",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": "{{baseUrl}}/api/employees/{{employeeId}}",
+        "description": "Use one consistent HTTPS baseUrl so Postman retains the CSRF cookie. Credentials are local variables only.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"empName\": \"Demo Employee\",\n  \"email\": \"{{employeeEmail}}\",\n  \"phoneNumber\": \"9876543210\",\n  \"designation\": \"Senior Software Engineer\",\n  \"deptId\": 1,\n  \"managerId\": {{managerId}},\n  \"gender\": \"Female\",\n  \"address\": \"Pune\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

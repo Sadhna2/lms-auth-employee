@@ -1,0 +1,39 @@
+{
+  "source": "E:\\eclipse-workspace\\Leave-Management-System\\lms-frontend",
+  "copied_and_adapted": [
+    "src/main.jsx",
+    "src/custom.css",
+    "src/auth.jsx",
+    "src/api.js",
+    "src/App.jsx",
+    "src/components/Layout.jsx",
+    "src/components/ui.jsx",
+    "src/pages/Login.jsx",
+    "src/pages/Employees.jsx",
+    "src/pages/Team.jsx"
+  ],
+  "added_required": [
+    "src/pages/Profile.jsx",
+    "package.json",
+    "vite.config.js",
+    "index.html"
+  ],
+  "excluded": [
+    "Register.jsx",
+    "Dashboard.jsx",
+    "EmployeeDashboard.jsx",
+    "HRDashboard.jsx",
+    "ManagerDashboard.jsx",
+    "ApplyLeave.jsx",
+    "Approvals.jsx",
+    "MyLeaves.jsx",
+    "Notifications.jsx",
+    "LeaveTypes.jsx",
+    "Holidays.jsx",
+    "Allocate.jsx",
+    "CalendarWidget.jsx",
+    ".env",
+    "node_modules",
+    "react-scripts configuration"
+  ]
+}
